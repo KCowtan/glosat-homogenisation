@@ -8,7 +8,7 @@ Arguments:
  -cycles=<ncycle> : number of cycles of changepoint detection (default 0)
  -fourier=<nfourier> : number of Fourier order per changepoint (default 0)
  -filter=<filter> : only use stations with given prefix
- -years=<year>,<year> : years for calculation (default 1780,2020)
+ -years=<year>,<year> : years for calculation (default 1781,2022)
  -bases=<year>,<year> : baseline years (default 1961,1990)
 
 If cycles is zero (the default), then calculate local expectation only.
@@ -68,7 +68,7 @@ def changemissing( dnorm, **opts ):
 # MAIN PROGRAM
 def main():
   # command line arguments
-  year0,year1 = 1780,2020
+  year0,year1 = 1781,2022
   base0,base1 = 1961,1990
   stationfilter = None
   tor = 0.1

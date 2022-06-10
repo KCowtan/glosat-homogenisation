@@ -8,7 +8,7 @@ Arguments:
  -cycles=<ncycle> : number of cycles of changepoint detection (default 0)
  -fourier=<nfourier> : number of Fourier order per changepoint (default 0)
  -filter=<filter> : only use stations with given prefix
- -years=<year>,<year> : years for calculation (default 1780,2020)
+ -years=<year>,<year> : years for calculation (default 1781,2022)
  -bases=<year>,<year> : baseline years (default 1961,1990)
 
 If cycles is zero (the default), then calculate local expectation only.
@@ -68,7 +68,7 @@ def changemissing( dnorm, **opts ):
 # MAIN PROGRAM
 def main():
   # command line arguments
-  year0,year1 = 1780,2020
+  year0,year1 = 1781,2022
   base0,base1 = 1961,1990
   stationfilter = None
   tor = 0.1
@@ -222,6 +222,12 @@ def main():
     for m in range(12):
       dlexp[m::12,:] -= numpy.nanmean( dlexpm[m::12,:], axis=0 )
 
+#MT:  Logic control for case of single station in stationcode filter sample
+#      if dlexpm[m::12,:].shape[1]>1:
+#        dlexp[m::12,:] -= numpy.nanmean( dlexpm[m::12,:], axis=0 )
+#      else:
+#        dlexp[m::12,:] -= numpy.nanmean( dlexpm[m::12] )
+
   # Output
   # ------
   # The rest of the calculation is just collecting data for output.
@@ -250,6 +256,11 @@ def main():
     for m in range(12):
       norms[m::12,s] += numpy.nanmean( diff[m::12,s] )
 
+#MT:  Logic control for case of single station in stationcode filter sample
+#      if len(diff[m::12,s].shape) > 1:
+#        norms[m::12,s] += numpy.nanmean( diff[m::12,s] )
+#      else:
+#        norms[m::12,s] += diff[m::12,s]
 
   # DATA OUTPUT
   # We need to add missing years (rows) to the source dataframe, then add
@@ -297,6 +308,12 @@ def main():
   for m in range(12):
     ddst[scols[m]] = svals[:,m]
   print( numpy.nanmean(ddst.loc[:,"n1"]), numpy.nanmean(ddst.loc[:,"ne1"]), numpy.nanmean(ddst.loc[:,"e1"]), numpy.nanmean(ddst.loc[:,"s1"]) )
+
+#MT: Logic control for case of single station in stationcode filter sample  
+#  if len(ddst.loc[:,"n1"].shape) > 1:
+#    print( numpy.nanmean(ddst.loc[:,"n1"]), numpy.nanmean(ddst.loc[:,"ne1"]), numpy.nanmean(ddst.loc[:,"e1"]), numpy.nanmean(ddst.loc[:,"s1"]) )
+#  else:
+#    print( ddst.loc[:,"n1"], ddst.loc[:,"ne1"], ddst.loc[:,"e1"], ddst.loc[:,"s1"], ddst.loc[:,"sd1"] )  
 
   # now join with the original data
   djoin = pandas.merge( dflt, ddst, how="outer", on=["year","stationcode"] )
