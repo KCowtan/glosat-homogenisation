@@ -36,6 +36,9 @@ def changepoints( dorig, **opts ):
   algo = ruptures.KernelCPD(kernel="linear",min_size=min_size).fit(dorig)
   #algo = ruptures.Pelt(model="l2", min_size=min_size).fit(dorig)
   result = algo.predict(pen=penalty_value)
+
+  print('RUPTURES:', result)
+
   return result[:-1]
 
 
@@ -70,6 +73,7 @@ def main():
   # command line arguments
   year0,year1 = 1780,2020
   base0,base1 = 1961,1990
+  base0sd,base1sd = 1941,1990 # HadCRUT5-style climatological standard deviations
   stationfilter = None
   tor = 0.1
   nfourier = 0
@@ -86,7 +90,7 @@ def main():
     if arg.split("=")[0] == "-years":    # year calc
       year0,year1 = [int(x) for x in arg.split("=")[1].split(",")]
     if arg.split("=")[0] == "-bases":    # year calc
-      base0,base1 = [int(x) for x in arg.split("=")[1].split(",")]
+      base0,base1 = [int(x) for x in arg.split("=")[1].split(",")]      
     if arg.split("=")[0] == "-filter":   # station selection
       stationfilter = arg.split("=")[1]
     if arg.split("=")[0] == "-fourier":  # number of fourier orders
@@ -146,8 +150,11 @@ def main():
     dates[j,0] = y
     dates[j,1] = m
 
-  # baseline period mask
+  # baseline period masks for climatological normals and standard deviations
   basemask = numpy.logical_and( dates[:,0] >= base0, dates[:,0] < base1 )
+  if base0 == 1961:
+    basemasksd = numpy.logical_and( dates[:,0] >= 1941, dates[:,0] < 1990 )
+  else: basemasksd = basemask
 
   # fill table by station and month
   for r in range(dcodes.shape[0]):
@@ -179,7 +186,7 @@ def main():
 
   # first full matrix normalization
   # -------------------------------
-  # We create an empyty array of station breakpoint flags in order to set norms
+  # We create an empty array of station breakpoint flags in order to set norms
   # using the full matrix method for complete station records.
   norms,norme = numpy.full( data.shape, 0.0 ), numpy.full( data.shape, numpy.nan )
   dfull = dnorm - norms
@@ -194,7 +201,7 @@ def main():
   # Iteratively find breakpoints
   # ----------------------------
   # We loop over n cycles, finding breakpoints from the difference between a station and
-  # its expectation, then updateing the norms and expectations.
+  # its expectation, then updating the norms and expectations.
   for cycle in range(ncycle):
     for s in range(nstn):
       flags[:,s] = changemissing( dnorm[:,s] - dlexp[:,s], nbuf=12 )
@@ -211,11 +218,17 @@ def main():
   vmsk = numpy.logical_and( ~numpy.isnan(d2), var>0.0 )
   var *= numpy.mean( d2[vmsk] ) / numpy.mean( var[vmsk] )
 
+  # Calculate climatological standard deviations
+  # --------------------------------------------  
+  # dlexpsdmasked = dlexp[basemasksd,:]
+  # for m in range(12):
+  #   norme[m::12,:] = numpy.nanstd( dlexpsdmasked[m::12,:], axis=0 )    
+
   # optional fitting to baseline
   # ----------------------------
   # If required, fit the resulting expectations on the baseline window,
   # then fit the stations to the baselines.
-  if rebaseline:
+  if rebaseline:    
     dlexpm = dlexp[basemask,:]
     for m in range(12):
       dlexp[m::12,:] -= numpy.nanmean( dlexpm[m::12,:], axis=0 )
@@ -242,12 +255,21 @@ def main():
   # print("Other, no overlap: ",numpy.mean(cov["cov"][numpy.logical_and(cov["dist"]>0.5,cov["overlap"]<0.5)]))
   # cov.to_csv("cov.csv",sep=" ",index=False)
 
-  # update station baselines to match filled data
+  # update station baselines to match filled data 
+  
   diff = data - norms - dlexp
   for s in range(nstn):
     for m in range(12):
       norms[m::12,s] += numpy.nanmean( diff[m::12,s] )
 
+  # Calculate climatological standard deviations
+  # --------------------------------------------  
+
+  diffmasked = diff[basemasksd,:]
+  for s in range(nstn):
+    for m in range(12):
+#      norme[m::12,s] = numpy.nanstd( diff[m::12,s] )
+      norme[m::12,s] = numpy.nanstd( diffmasked[m::12,s] )
 
   # DATA OUTPUT
   # We need to add missing years (rows) to the source dataframe, then add

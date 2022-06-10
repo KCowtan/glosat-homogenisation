@@ -8,7 +8,7 @@ Arguments:
  -cycles=<ncycle> : number of cycles of changepoint detection (default 0)
  -fourier=<nfourier> : number of Fourier order per changepoint (default 0)
  -filter=<filter> : only use stations with given prefix
- -years=<year>,<year> : years for calculation (default 1780,2020)
+ -years=<year>,<year> : years for calculation (default 1781,2021)
  -bases=<year>,<year> : baseline years (default 1961,1990)
 
 If cycles is zero (the default), then calculate local expectation only.
@@ -68,8 +68,9 @@ def changemissing( dnorm, **opts ):
 # MAIN PROGRAM
 def main():
   # command line arguments
-  year0,year1 = 1780,2020
+  year0,year1 = 1781,2021
   base0,base1 = 1961,1990
+  base0sd,base1sd = 1941,1990 # HadCRUT5-style climatological standard deviations
   stationfilter = None
   tor = 0.1
   nfourier = 0
@@ -146,8 +147,11 @@ def main():
     dates[j,0] = y
     dates[j,1] = m
 
-  # baseline period mask
+  # baseline period masks for climatological normals and standard deviations
   basemask = numpy.logical_and( dates[:,0] >= base0, dates[:,0] < base1 )
+  if base0 == 1961:
+    basemasksd = numpy.logical_and( dates[:,0] >= 1941, dates[:,0] < 1990 )
+  else: basemasksd = basemask
 
   # fill table by station and month
   for r in range(dcodes.shape[0]):
@@ -179,9 +183,9 @@ def main():
 
   # first full matrix normalization
   # -------------------------------
-  # We create an empyty array of station breakpoint flags in order to set norms
+  # We create an empty array of station breakpoint flags in order to set norms
   # using the full matrix method for complete station records.
-  norms,norme,pars,X,Q = glosat_homogenization.solve_norms( dnorm, flags, cov, tor, nfourier )
+  norms, norme, pars, X, Q = glosat_homogenization.solve_norms( dnorm, flags, cov, tor, nfourier )
   dfull = dnorm - norms
 
   # calculate local expectations
@@ -194,11 +198,11 @@ def main():
   # Iteratively find breakpoints
   # ----------------------------
   # We loop over n cycles, finding breakpoints from the difference between a station and
-  # its expectation, then updateing the norms and expectations.
+  # its expectation, then updating the norms and expectations.
   for cycle in range(ncycle):
     for s in range(nstn):
       flags[:,s] = changemissing( dnorm[:,s] - dlexp[:,s], nbuf=12 )
-    norms,norme,pars,X,Q = glosat_homogenization.solve_norms( dnorm, flags, cov, tor, nfourier )
+    norms, norme, pars, X, Q = glosat_homogenization.solve_norms( dnorm, flags, cov, tor, nfourier )
     dfull = dnorm - norms
     dlexp,var = glosat_homogenization.local_expectation( dfull, cov, tor )
 
@@ -218,7 +222,11 @@ def main():
   if rebaseline:
     dlexpm = dlexp[basemask,:]
     for m in range(12):
-      dlexp[m::12,:] -= numpy.nanmean( dlexpm[m::12,:], axis=0 )
+      # Logic control for case of single station in stationcode filter sample
+      if dlexpm[m::12,:].shape[1]>1:
+        dlexp[m::12,:] -= numpy.nanmean( dlexpm[m::12,:], axis=0 )
+      else:
+        dlexp[m::12,:] -= numpy.nanmean( dlexpm[m::12] )
 
   # Output
   # ------
@@ -240,15 +248,36 @@ def main():
   print("Self,  no overlap: ",numpy.mean(cov["cov"][numpy.logical_and(cov["dist"]<0.5,cov["overlap"]<0.5)]))
   print("Other, overlap:    ",numpy.mean(cov["cov"][numpy.logical_and(cov["dist"]>0.5,cov["overlap"]>0.5)]))
   print("Other, no overlap: ",numpy.mean(cov["cov"][numpy.logical_and(cov["dist"]>0.5,cov["overlap"]<0.5)]))
-  cov.to_csv("cov.csv",sep=" ",index=False)
+#  cov.to_csv("cov.csv",sep=" ",index=False)
 
   # update station baselines to match filled data
   diff = data - norms - dlexp
   for s in range(nstn):
     for m in range(12):
-      norms[m::12,s] += numpy.nanmean( diff[m::12,s] )
+      # Logic control for case of single station in stationcode filter sample
+      if len(diff[m::12,s].shape) > 1:
+        norms[m::12,s] += numpy.nanmean( diff[m::12,s] )
+      else:
+        norms[m::12,s] += diff[m::12,s]
 
+  # Calculate climatological standard deviations
+  # --------------------------------------------  
 
+  normsd = numpy.full( [dlexp.shape[0],dlexp.shape[1]], numpy.nan ) 
+  dlexpmasked = dlexp[basemasksd,:]
+  for s in range(nstn):
+    for m in range(12):    
+#     nSD = numpy.isfinite(dlexpmasked[m::12,s]).sum()
+#     print("nSD=", numpy.isfinite(dlexpmasked[m::12,s]).sum())
+#     normsd[m::12,s] = numpy.nanstd( dlexpmasked[m::12,s] ) / numpy.sqrt( nSD )
+      normsd[m::12,s] = numpy.nanstd( dlexpmasked[m::12,s] )
+
+  # Reconstruct absolute temperatures from norms and local expectations (i.e. homogenised observations)
+  # ---------------------------------------------------------------------------------------------------
+
+  dldata = numpy.full( [data.shape[0],data.shape[1]], numpy.nan ) 
+  dldata = dlexp + norms
+    
   # DATA OUTPUT
   # We need to add missing years (rows) to the source dataframe, then add
   # extra columns for the additional information
@@ -258,7 +287,7 @@ def main():
   # now populate from source data frame
   ddst["year"] = numpy.tile( years, nstn )
   ddst["stationcode"] = numpy.repeat( codes, nyr )
-
+  
   print(dflt.shape, ddst.shape)
 
   # make new columns for source dataframe
@@ -268,6 +297,8 @@ def main():
   nvale = numpy.full( [ddst.shape[0],12], numpy.nan )
   evals = numpy.full( [ddst.shape[0],12], numpy.nan )
   svals = numpy.full( [ddst.shape[0],12], numpy.nan )
+  sdvals = numpy.full( [ddst.shape[0],12], numpy.nan )
+  tvals = numpy.full( [ddst.shape[0],12], numpy.nan )
   for r in range(len(ddst)):
     year = ddst.at[ r, "year" ]
     code = ddst.at[ r, "stationcode" ]
@@ -278,6 +309,8 @@ def main():
       nvale[r,:] = norme[i:i+12,j]
       evals[r,:] = dlexp[i:i+12,j]
       svals[r,:] = numpy.sqrt(var[i:i+12,j])
+      sdvals[r,:] = normsd[i:i+12,j]
+      tvals[r,:] = dldata[i:i+12,j]
     if r%1000 == 0: print(" row ",r,flush=True)
 
   # add the new columns to the source data frame
@@ -286,6 +319,8 @@ def main():
   ncole = ["ne1","ne2","ne3","ne4","ne5","ne6","ne7","ne8","ne9","ne10","ne11","ne12"]
   ecols = [ "e1", "e2", "e3", "e4", "e5", "e6", "e7", "e8", "e9", "e10", "e11", "e12"]
   scols = [ "s1", "s2", "s3", "s4", "s5", "s6", "s7", "s8", "s9", "s10", "s11", "s12"]
+  sdcols = [ "sd1", "sd2", "sd3", "sd4", "sd5", "sd6", "sd7", "sd8", "sd9", "sd10", "sd11", "sd12"]
+  tcols = [ "t1", "t2", "t3", "t4", "t5", "t6", "t7", "t8", "t9", "t10", "t11", "t12"]
   for m in range(12):
     ddst[ncols[m]] = nvals[:,m]
   for m in range(12):
@@ -294,8 +329,16 @@ def main():
     ddst[ecols[m]] = evals[:,m]
   for m in range(12):
     ddst[scols[m]] = svals[:,m]
-  print( numpy.nanmean(ddst.loc[:,"n1"]), numpy.nanmean(ddst.loc[:,"ne1"]), numpy.nanmean(ddst.loc[:,"e1"]), numpy.nanmean(ddst.loc[:,"s1"]) )
-
+  for m in range(12):
+    ddst[sdcols[m]] = sdvals[:,m]
+  for m in range(12):
+    ddst[tcols[m]] = tvals[:,m]
+  
+  # Logic control for case of single station in stationcode filter sample  
+  if len(ddst.loc[:,"n1"].shape) > 1:
+    print( numpy.nanmean(ddst.loc[:,"n1"]), numpy.nanmean(ddst.loc[:,"ne1"]), numpy.nanmean(ddst.loc[:,"e1"]), numpy.nanmean(ddst.loc[:,"s1"]), numpy.nanmean(ddst.loc[:,"sd1"]) )
+  else:
+    print( ddst.loc[:,"n1"], ddst.loc[:,"ne1"], ddst.loc[:,"e1"], ddst.loc[:,"s1"], ddst.loc[:,"sd1"] )  
   # now join with the original data
   djoin = pandas.merge( dflt, ddst, how="outer", on=["year","stationcode"] )
 

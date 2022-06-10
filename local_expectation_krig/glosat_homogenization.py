@@ -52,7 +52,7 @@ def interpolatew( obs, cov, tor=0.0 ):
         numpy.hstack( [ numpy.ones([1,a.shape[1]]), numpy.zeros([1,1]) ] )
     ] )
   b = numpy.vstack( [ b,numpy.ones([1,b.shape[1]]) ] )
-  # solve for basis function weigths
+  # solve for basis function weights
   try:
     x = numpy.linalg.solve( a, b )
   except:
