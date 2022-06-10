@@ -132,7 +132,7 @@ def main():
   # -------------------------------
   # We create an empyty array of station breakpoint flags in order to set norms
   # using the full matrix method for complete station records.
-  norms,norme = numpy.full( data.shape, 0.0 ), numpy.full( data.shape, numpy.nan )
+  norms,norme = glosat_homogenization.solve_norms_iter_err( dnorm, flags, cov, tor, nfourier )
   dfull = dnorm - norms
 
   # calculate local expectations
@@ -141,17 +141,6 @@ def main():
   # anomalies.
   dlexp,var = glosat_homogenization.local_expectation( dfull, cov, tor )
   print( "INIT ", numpy.nanstd(dnorm), numpy.nanstd(dfull), numpy.nanstd(dlexp) )
-
-  # Iteratively find breakpoints
-  # ----------------------------
-  # We loop over n cycles, finding breakpoints from the difference between a station and
-  # its expectation, then updateing the norms and expectations.
-  for cycle in range(ncycle):
-    norms = glosat_homogenization.fit_norms( dnorm - dlexp, flags, nfourier=nfourier )
-    dfull = dnorm - norms
-    dlexp,var = glosat_homogenization.local_expectation( dfull, cov, tor )
-
-  print( "NORMS ", numpy.std(norms), numpy.sum(flags) )
 
   # calculate uncertainties
   # -----------------------
@@ -172,24 +161,6 @@ def main():
   # Output
   # ------
   # The rest of the calculation is just collecting data for output.
-  # covariance data
-  # print(Q)
-  # covx,covy,covz = [],[],[]
-  # for i in range(len(pars)):
-    # for j in range(len(pars)):
-      # f1,s1 = pars[i]
-      # f2,s2 = pars[j]
-      # covx.append(dists[s1,s2])
-      # covy.append(Q[i,j])
-      # covz.append(numpy.count_nonzero(numpy.logical_and(flags[:,s1]==f1,flags[:,s2]==f2)))
-  # cov = pandas.DataFrame({"dist":covx,"cov":covy,"overlap":covz})
-  # print("Self:              ",numpy.mean(cov["cov"][cov["dist"]<0.5]))
-  # print("Other:             ",numpy.mean(cov["cov"][cov["dist"]>0.5]))
-  # print("Self,  overlap:    ",numpy.mean(cov["cov"][numpy.logical_and(cov["dist"]<0.5,cov["overlap"]>0.5)]))
-  # print("Self,  no overlap: ",numpy.mean(cov["cov"][numpy.logical_and(cov["dist"]<0.5,cov["overlap"]<0.5)]))
-  # print("Other, overlap:    ",numpy.mean(cov["cov"][numpy.logical_and(cov["dist"]>0.5,cov["overlap"]>0.5)]))
-  # print("Other, no overlap: ",numpy.mean(cov["cov"][numpy.logical_and(cov["dist"]>0.5,cov["overlap"]<0.5)]))
-  # cov.to_csv("cov.csv",sep=" ",index=False)
 
   # update station baselines to match filled data
   diff = data - norms - dlexp

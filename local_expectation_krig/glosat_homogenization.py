@@ -52,7 +52,7 @@ def interpolatew( obs, cov, tor=0.0 ):
         numpy.hstack( [ numpy.ones([1,a.shape[1]]), numpy.zeros([1,1]) ] )
     ] )
   b = numpy.vstack( [ b,numpy.ones([1,b.shape[1]]) ] )
-  # solve for basis function weights
+  # solve for basis function weigths
   try:
     x = numpy.linalg.solve( a, b )
   except:
@@ -130,7 +130,7 @@ def fit_norms( obs, flags, nfourier=0 ):
 
 
 # solve for station fragment norms
-def solve_norms( obs, flags, cov, tor, nfourier ):
+def solve_norms( obs, flags, cov, tor, nfourier, diagnostics=1 ):
   """
   Solve for station fragment norms using Kriging weights and full matrix
   least squares.
@@ -260,7 +260,115 @@ def solve_norms( obs, flags, cov, tor, nfourier ):
     norme[mmsk,s1] = numpy.dot(wmfourier,E[p,:])[mmsk]
 
   # and return them
-  return ( norms, norme, pars, X, Q )
+  if diagnostics: return ( norms, norme, pars, X, Q )
+  return ( norms, norme )
+
+
+# solve for station fragment norms
+def solve_norms_iter( obs, flags, cov, tor, nfourier, niter=10 ):
+  """
+  Solve for station fragment norms using Kriging weights and
+  iteration with local expectation.
+  
+  Parameters:
+    obs[nmon,nstn] (matrix of float): observations (some of which may be missing)
+    flags[nmon,nstn] (matrix of int): flags demarkating station fragments 0...n
+    cov (matrix of float): covariances or correlation matrix
+    tor (float): error parameter, see https://hal.archives-ouvertes.fr/cel-02285439v2/document
+    nfourier (int): number of Fourier orders to use in norms
+    niter (int): number of iterations to perform
+  
+  Returns:
+    tuple of:
+      [nmon,nstn] norms (matrix of float)
+      [nmon,nstn] uncertainties in norms (matrix of float, EMPTY)
+  """
+  norms,norme = numpy.full( obs.shape, 0.0 ), numpy.full( obs.shape, numpy.nan )
+  dfull = obs - norms
+
+  # calculate local expectations
+  # ----------------------------
+  # Now we calculate a local expectation at the location of each station using the
+  # anomalies.
+  dlexp,var = local_expectation( dfull, cov, tor )
+
+  # Iteratively find breakpoints
+  # ----------------------------
+  # We loop over n cycles, finding breakpoints from the difference between a station and
+  # its expectation, then updateing the norms and expectations.
+  for cycle in range(niter):
+    norms = fit_norms( obs - dlexp, flags, nfourier=nfourier )
+    dfull = obs - norms
+    dlexp,var = local_expectation( dfull, cov, tor )
+
+  # and return them
+  return ( norms, norme )
+
+
+# solve for station fragment norms
+def solve_norms_iter_err( obs, flags, cov, tor, nfourier, niter=10, nerr=6 ):
+  """
+  Solve for station fragment norms using Kriging weights and
+  iteration with local expectation.
+  
+  Parameters:
+    obs[nmon,nstn] (matrix of float): observations (some of which may be missing)
+    flags[nmon,nstn] (matrix of int): flags demarkating station fragments 0...n
+    cov (matrix of float): covariances or correlation matrix
+    tor (float): error parameter, see https://hal.archives-ouvertes.fr/cel-02285439v2/document
+    nfourier (int): number of Fourier orders to use in norms
+    niter (int): number of iterations to perform. DEFAULT=10
+    nerr  (int): number of cycles to estimate errors. DEFAULT=5
+  
+  Returns:
+    tuple of:
+      [nmon,nstn] norms (matrix of float)
+      [nmon,nstn] uncertainties in norms (matrix of float)
+  """
+  nmon, nstn = obs.shape
+
+  # calculate initial norms
+  norms,*others = solve_norms_iter( obs, flags, cov, tor, nfourier, niter )
+
+  nosds = numpy.full( obs.shape, numpy.nan )
+  for s in range(nstn):
+    frags = numpy.unique( flags[:,s] )
+    for f in frags:
+      msk = flags[:,s]==f
+      nosds[msk,s] = numpy.nanstd( obs[msk,s]-norms[msk,s] )
+
+  normn = []
+  for c in range(nerr):
+    sim = numpy.random.normal(norms,nosds)
+    sim[numpy.isnan(obs)] = numpy.nan
+    normx,*others = solve_norms_iter( sim, flags, cov, tor, nfourier, niter )
+    normn.append( normx )
+
+  # remove cycle in norm uncertainties (also incresing sample size)
+  norme = numpy.nanstd(normn,axis=0)
+  for s in range(nstn):
+    frags = numpy.unique( flags[:,s] )
+    for f in frags:
+      msk = flags[:,s]==f
+      norme[msk,s] = numpy.mean(norme[msk,s])
+
+  """
+  import matplotlib.pyplot as plt
+  for s in range(nstn):
+    t = norms[:,s]
+    a = numpy.empty_like(t)
+    for m in range(12): a[m::12] = t[m::12] - numpy.nanmean(t[m::12])
+    plt.plot( a[:], 'k-', lw=3 )
+    plt.plot( obs[:,s], 'bx', ms=3 )
+    plt.plot( sim[:,s], 'ro', ms=3 )
+    plt.fill_between( numpy.arange(nmon), a[:]-norme[:,s], a[:]+norme[:,s], color='k', alpha=0.2 )
+    plt.savefig( "sim{:04d}.png".format(s) )
+    plt.close()
+  """
+
+  # and return them
+  return ( norms, norme )
+
 
 
 # calculate local expectation using kriging with approximate hold-out
