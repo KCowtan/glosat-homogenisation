@@ -123,9 +123,9 @@ def fit_norms( obs, flags, nfourier=0 ):
         p += 2
     xm = x[ ~numpy.isnan(y), : ]
     ym = y[ ~numpy.isnan(y) ]
-    if ym.shape[0] < xm.shape[1]: return numpy.zeros_like(y)
-    p = numpy.linalg.lstsq(xm,ym,rcond=None)[0]
-    norms[:,s] = numpy.dot(x,p)
+    if ym.shape[0] >= xm.shape[1]:
+      p = numpy.linalg.lstsq(xm,ym,rcond=None)[0]
+      norms[:,s] = numpy.dot(x,p)
   return norms
 
 
@@ -359,8 +359,8 @@ def solve_norms_iter_err( obs, flags, cov, tor, nfourier, niter=10, nerr=6 ):
     a = numpy.empty_like(t)
     for m in range(12): a[m::12] = t[m::12] - numpy.nanmean(t[m::12])
     plt.plot( a[:], 'k-', lw=3 )
-    plt.plot( obs[:,s], 'bx', ms=3 )
-    plt.plot( sim[:,s], 'ro', ms=3 )
+    plt.plot( obs[:,s], 'bx', ms=2, mew=0.5 )
+    plt.plot( sim[:,s], 'ro', ms=2, mew=0.5 )
     plt.fill_between( numpy.arange(nmon), a[:]-norme[:,s], a[:]+norme[:,s], color='k', alpha=0.2 )
     plt.savefig( "sim{:04d}.png".format(s) )
     plt.close()

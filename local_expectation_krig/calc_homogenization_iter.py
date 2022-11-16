@@ -7,6 +7,7 @@ Arguments:
  -o=<filename> : specific output pkl file (default df_temp_expect.pkl) 
  -cycles=<ncycle> : number of cycles of changepoint detection (default 0)
  -fourier=<nfourier> : number of Fourier order per changepoint (default 0)
+ -crossval=<set>,<nsets>,<seed> : crossval sets e.g. 0,2,0 or 1,2,0
  -filter=<filter> : only use stations with given prefix
  -years=<year>,<year> : years for calculation (default 1781,2022)
  -bases=<year>,<year> : baseline years (default 1961,1990)
@@ -71,6 +72,7 @@ def main():
   year0,year1 = 1781,2022
   base0,base1 = 1961,1990
   stationfilter = None
+  crossval = None
   tor = 0.1
   nfourier = 0
   ncycle   = 10
@@ -89,6 +91,8 @@ def main():
       base0,base1 = [int(x) for x in arg.split("=")[1].split(",")]
     if arg.split("=")[0] == "-filter":   # station selection
       stationfilter = arg.split("=")[1]
+    if arg.split("=")[0] == "-crossval": # station selection
+      crossval = [int(x) for x in arg.split("=")[1].split(",")]
     if arg.split("=")[0] == "-fourier":  # number of fourier orders
       nfourier = int(arg.split("=")[1])
     if arg.split("=")[0] == "-cycles":   # number of cycles of homogenization
@@ -109,10 +113,18 @@ def main():
   dsrc = pandas.read_pickle( ifile, compression='bz2' )
 
   # filter if required
+  stnmask = numpy.full( [dsrc.shape[0]], True )
+  if crossval:
+    numpy.random.seed(crossval[2])
+    ids = dsrc["stationcode"].values.astype(int)
+    idu = numpy.unique(ids)
+    inc = numpy.random.randint(0,crossval[1],size=idu.shape)
+    idi = idu[inc==crossval[0]]
+    newmask = numpy.isin(ids,idi)
+    stnmask = numpy.logical_and( stnmask, newmask )
   if stationfilter:
-    stnmask = dsrc["stationcode"].str.startswith(stationfilter)
-  else:
-    stnmask = numpy.full( [dsrc.shape[0]], True )
+    newmask = dsrc["stationcode"].str.startswith(stationfilter)
+    stnmask = numpy.logical_and( stnmask, newmask )
   stnmask = numpy.logical_and( stnmask, dsrc["stationlat"].notna() )
   stnmask = numpy.logical_and( stnmask, dsrc["stationlon"].notna() )
   dflt = dsrc[stnmask]
@@ -147,7 +159,7 @@ def main():
     dates[j,1] = m
 
   # baseline period mask
-  basemask = numpy.logical_and( dates[:,0] >= base0, dates[:,0] < base1 )
+  basemask = numpy.logical_and( dates[:,0] >= base0, dates[:,0] <= base1 )
 
   # fill table by station and month
   for r in range(dcodes.shape[0]):

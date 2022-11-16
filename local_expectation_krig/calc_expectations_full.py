@@ -98,7 +98,7 @@ def main():
     dates[j,1] = m
 
   # baseline period mask
-  basemask = numpy.logical_and( dates[:,0] >= base0, dates[:,0] < base1 )
+  basemask = numpy.logical_and( dates[:,0] >= base0, dates[:,0] <= base1 )
 
   # fill table by station and month
   for r in range(dcodes.shape[0]):
