@@ -120,6 +120,7 @@ def main():
     n1 = numpy.arange(0,nstn)
     m1 = m0>=2*nwin
     print(sum(m1))
+    # calc best residual for each station pair
     for s1 in n1[m1]:
       n2 = numpy.arange(s1+1,nstn) # optimized selection by range
       m2 = numpy.logical_and(numpy.logical_and(dists[s1,n2]>10,dists[s1,n2]<500),m0[n2]>2*nwin)
@@ -131,13 +132,23 @@ def main():
           r = []
           for y in range(0,nmask-nwin,12):
             dw = d[y:y+nwin]
+            # if there are missings, try and backfill from extended window
+            if 0 < numpy.count_nonzero(numpy.isnan(dw)) <= 24:
+              yoff = min(max(y,12),nmask-nwin-12)
+              dwx = d[yoff-12:yoff+nwin+12]
+              for m in range(12):
+                if numpy.count_nonzero(numpy.isnan(dw[m::12]))>0:
+                  dm = dwx[m::12]
+                  dm = dm[~numpy.isnan(dm)]
+                  if dm.shape[0] >= nwin//12: dw[m::12] = dm[:nwin//12]
+            # if there are no missings, add the result
             if numpy.count_nonzero(numpy.isnan(dw)) == 0:
               r.append( anomaly_diff2( dw ) )
           if len(r) > 0:
             if 1.0e-2 < min(r) < 4.0:
               r2[s1,s2] = r2[s2,s1] = 0.5*min(r)
 
-    # get OLS
+    # get OLS fit of residual against distance
     err = numpy.full( [nstn], numpy.nan )
     for s in range(nstn):
       m = ~numpy.isnan( r2[s,:] )
@@ -168,7 +179,7 @@ def main():
     # get fill value for isolated stations
     efill = numpy.quantile(err[~numpy.isnan(err)],0.75)
     merr[numpy.isnan(merr)] = efill
-    print("Error fill:",efill)
+    print("Error fill:",efill,numpy.count_nonzero(~numpy.isnan(err)))
 
     # plot map
     m = ~numpy.isnan(err)
